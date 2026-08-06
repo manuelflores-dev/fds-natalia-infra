@@ -1,0 +1,117 @@
+name: fds-natalia
+
+services:
+
+  # ── PHP-FPM API (Laravel — projects/api-pasteleria-natalia) ──────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: php/api/Dockerfile
+    container_name: ${PHP_API_CONTAINER}
+    restart: unless-stopped
+    environment:
+      TZ: America/Mexico_City
+    volumes:
+      - ./projects/api-pasteleria-natalia:/var/www/html/api-pasteleria-natalia
+    networks:
+      - custom-network
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ── PHP-FPM WEB (Laravel + Livewire — projects/pasteleria-natalia) ───────────────
+  web:
+    build:
+      context: .
+      dockerfile: php/web/Dockerfile
+    container_name: ${PHP_WEB_CONTAINER}
+    restart: unless-stopped
+    environment:
+      TZ: America/Mexico_City
+    volumes:
+      - ./projects/pasteleria-natalia:/var/www/html/pasteleria-natalia
+    networks:
+      - custom-network
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ── NGINX CENTRALIZADO (un server{} por dominio) ────────────────────────────
+  nginx:
+    image: nginx:stable-alpine
+    container_name: ${NGINX_CONTAINER}
+    restart: unless-stopped
+    environment:
+      TZ: America/Mexico_City
+    ports:
+      # Solo local: el TLS lo termina el nginx reverse proxy del host
+      - "127.0.0.1:${NGINX_PORT}:80"
+    volumes:
+      - ./projects:/var/www/html:ro
+      - ./nginx:/etc/nginx/conf.d:ro
+      - ./logs:/var/log/nginx
+    networks:
+      - custom-network
+    depends_on:
+      - api
+      - web
+
+  # ── MARIADB 11 (una sola instancia para los dos proyectos) ──────────────────
+  db:
+    image: mariadb:11.8
+    container_name: ${MARIADB_CONTAINER}
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE}
+      MYSQL_USER: ${DB_USERNAME}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+      TZ: America/Mexico_City
+    ports:
+      - "127.0.0.1:${MARIADB_PORT}:3306"
+    volumes:
+      - mariadb_data:/var/lib/mysql
+      - ./db_conf/my.cnf:/etc/mysql/conf.d/my.cnf:ro
+    networks:
+      - custom-network
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ── REDIS (cache / sesiones / colas de ambos proyectos) ─────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: ${REDIS_CONTAINER}
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
+    environment:
+      TZ: America/Mexico_City
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+    networks:
+      - custom-network
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+networks:
+  custom-network:
+    name: ${DOCKER_NETWORK_NAME}
+    driver: bridge
+
+# Docker prefija los volúmenes con el `name:` de la primera línea, NO con el
+# nombre de la carpeta. Por eso quedan como fds-natalia_mariadb_data y
+# fds-natalia_redis_data, aunque muevas o renombres el repo.
+volumes:
+  mariadb_data:
+  redis_data:
