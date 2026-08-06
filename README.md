@@ -116,7 +116,7 @@ Los hosts son los **nombres de servicio** de compose (`db`, `redis`).
 ```dotenv
 APP_ENV=production
 APP_DEBUG=false
-APP_URL=https://api.pasteleria-natalia.com
+APP_URL=https://api.pasteleria-natalia.com.mx
 
 DB_CONNECTION=mariadb
 DB_HOST=db
@@ -139,9 +139,9 @@ CACHE_PREFIX=natalia_api
 **projects/pasteleria-natalia/.env** — igual, cambiando:
 
 ```dotenv
-APP_URL=https://pasteleria-natalia.com
+APP_URL=https://pasteleria-natalia.com.mx
 CACHE_PREFIX=natalia_web
-SESSION_DOMAIN=.pasteleria-natalia.com
+SESSION_DOMAIN=.pasteleria-natalia.com.mx
 ```
 
 El `CACHE_PREFIX` distinto es lo que evita que las dos apps se pisen las llaves
@@ -175,7 +175,7 @@ Los **dos** dominios de pastelería van al mismo puerto 8082; el nginx interno
 los separa otra vez por `Host`. Por eso el `proxy_set_header Host $host;` del
 proxy no es opcional: sin él las peticiones caen en el catch-all 444.
 
-El archivo listo está en `fds-server-proxy/sites/pasteleria-natalia.com.conf`.
+El archivo listo está en `fds-server-proxy/sites/pasteleria-natalia.com.mx.conf`.
 Cópialo a `/etc/nginx/conf.d/` del servidor **solo cuando ya tengas el dominio
 y su Origin Certificate** — si lo copias antes, `nginx -t` falla porque el
 certificado no existe.
