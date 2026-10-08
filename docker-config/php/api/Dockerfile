@@ -36,10 +36,10 @@ RUN mv "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini"
 COPY php.ini /usr/local/etc/php/conf.d/custom.ini
 
 #  Composer
-COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
 #  Usuario no-root
-RUN usermod -u 1000 www-data
+RUN usermod -u 1000 www-data && groupmod -g 1000 www-data
 
 WORKDIR /var/www/html/api-pasteleria-natalia
 USER www-data

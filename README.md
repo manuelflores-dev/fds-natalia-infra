@@ -5,7 +5,7 @@
 Orquestación de producción para los dos proyectos de Pastelería Natalia:
 la **API** y la **web**, con **una sola base de datos** compartida entre ambos.
 
-Stack: PHP 8.5-FPM · Nginx · MariaDB 11.8 · Redis 7 — el mismo de
+Stack: PHP 8.5-FPM · Nginx · MariaDB 12.3 · Redis 8 — el mismo de
 `flores-devstudio-infra`, con el patrón multi-proyecto de
 `Docker-Centralized-Multi-Stack-Architecture` (varios proyectos en `projects/`,
 un PHP-FPM por proyecto y un Nginx central con un `server{}` por dominio).
@@ -23,14 +23,14 @@ fds-natalia-infra-docker/
 │   │   │   ├── Dockerfile    ← PHP 8.5 + extensiones Laravel
 │   │   │   └── php.ini
 │   │   └── web/
-│   │       ├── Dockerfile    ← igual + Node 22 para los assets de Vite/Livewire
+│   │       ├── Dockerfile    ← igual + Node 24 para los assets de Vite/Livewire
 │   │       └── php.ini
 │   ├── nginx/                ← se monta completo como /etc/nginx/conf.d
 │   │   ├── 00-default.conf   ← catch-all: Host desconocido → 444
 │   │   ├── api.conf          ← server{} de la API
 │   │   └── web.conf          ← server{} de la web
 │   └── mariadb/
-│       └── my.cnf            ← config MariaDB 11.8
+│       └── my.cnf            ← config MariaDB 12.3
 ├── logs/nginx/               ← logs de Nginx (ignorado en git)
 └── projects/             ← aquí se clonan los proyectos (ignorado en git)
     ├── api-pasteleria-natalia/
@@ -47,8 +47,8 @@ clona por separado dentro de él.
 | `api`    | `${PHP_API_CONTAINER}`| build docker-config/php/api | no                       |
 | `web`    | `${PHP_WEB_CONTAINER}`| build docker-config/php/web | no                       |
 | `nginx`  | `${NGINX_CONTAINER}`  | nginx:stable-alpine | `127.0.0.1:${NGINX_PORT}` |
-| `db`     | `${MARIADB_CONTAINER}`| mariadb:11.8        | `127.0.0.1:${MARIADB_PORT}` |
-| `redis`  | `${REDIS_CONTAINER}`  | redis:7-alpine      | no                       |
+| `db`     | `${MARIADB_CONTAINER}`| mariadb:12.3        | `127.0.0.1:${MARIADB_PORT}` |
+| `redis`  | `${REDIS_CONTAINER}`  | redis:8-alpine      | no                       |
 
 ## Setup inicial (en el VPS)
 
@@ -220,11 +220,63 @@ docker compose exec web bash      # entrar al contenedor de la web
 docker compose ps                 # estado
 ```
 
-Respaldo de la base:
+## Publicar cambios (deploy)
 
 ```bash
-docker compose exec db mariadb-dump -u root -p --single-transaction natalia > backup_natalia.sql
+./scripts/deploy.sh web    # o: ./scripts/deploy.sh api
 ```
+
+Baja el código del proyecto (`git pull`), corre `composer install --no-dev`,
+compila los assets si hay `package.json`, `php artisan migrate --force` y
+`php artisan optimize`, y **reinicia PHP**. Ese reinicio no es opcional: OPcache
+corre con `validate_timestamps=0` y sin él PHP sigue sirviendo el código anterior.
+Si alguna vez actualizas a mano, termina siempre con `docker compose restart web` / `api`.
+
+## Respaldos
+
+```bash
+./scripts/backup-db.sh
+```
+
+Deja `backups/AAAA-MM-DD_HHMM.sql.gz` (ignorado en git) y borra los de más de
+14 días (`DIAS=30 ./scripts/backup-db.sh` para cambiarlo). Para que corra solo,
+todos los días a las 3:30, con `crontab -e` del usuario que maneja Docker:
+
+```
+30 3 * * * /ruta/a/fds-natalia-infra-docker/scripts/backup-db.sh >> /ruta/a/fds-natalia-infra-docker/backups/backup.log 2>&1
+```
+
+Un respaldo que solo vive en el mismo servidor no sirve si el servidor se pierde:
+copia `backups/` a otro lado (otra máquina, un bucket) con `rsync` o `rclone`.
+
+Restaurar:
+
+```bash
+gunzip -c backups/ARCHIVO.sql.gz | docker compose exec -T db sh -c 'mariadb -uroot -p"$MARIADB_ROOT_PASSWORD"'
+```
+
+## Logs
+
+- `docker compose logs`: rotan solos (10 MB × 5 por contenedor, `x-logging` del compose).
+- `logs/nginx/*.log`: los escribe el nginx del stack y hay que rotarlos con el
+  logrotate del servidor. Una vez, desde la carpeta del repo:
+
+```bash
+sudo tee /etc/logrotate.d/fds-natalia > /dev/null <<EOF
+$(pwd)/logs/nginx/*.log {
+    daily
+    rotate 14
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+}
+EOF
+```
+
+`copytruncate` porque nginx corre dentro del contenedor y no se le puede mandar
+la señal para reabrir el archivo.
 
 ## Notas de seguridad
 
@@ -232,7 +284,7 @@ docker compose exec db mariadb-dump -u root -p --single-transaction natalia > ba
 - Redis con `requirepass`.
 - PHP-FPM corre como `www-data` (no-root), con `php.ini-production`,
   `expose_php=Off` y `display_errors=Off`.
-- OPcache con `validate_timestamps=0`: tras cada deploy hay que reiniciar el
-  contenedor de PHP para que tome el código nuevo
-  (`docker compose restart api web`).
+- OPcache con `validate_timestamps=0`: `scripts/deploy.sh` reinicia PHP al final
+  de cada publicación (ver *Publicar cambios*).
+- Logs de Docker con tope de tamaño y respaldos diarios de la base (ver arriba).
 - Un `Host` que no coincida con ningún dominio configurado recibe 444.
