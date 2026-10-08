@@ -38,6 +38,11 @@ COPY php.ini /usr/local/etc/php/conf.d/custom.ini
 #  Composer
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
+#  Xdebug SOLO para desarrollo local: docker-compose.dev.yml lo activa con
+#  INSTALL_XDEBUG=true. En producción el argumento queda en false y no se instala.
+ARG INSTALL_XDEBUG=false
+RUN if [ "$INSTALL_XDEBUG" = "true" ]; then pecl install xdebug && docker-php-ext-enable xdebug; fi
+
 #  Usuario no-root
 RUN usermod -u 1000 www-data && groupmod -g 1000 www-data
 
