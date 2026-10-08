@@ -13,24 +13,25 @@ un PHP-FPM por proyecto y un Nginx central con un `server{}` por dominio).
 ## Estructura
 
 ```
-fds-natalia-infra/
+fds-natalia-infra-docker/
 ├── docker-compose.yml
-├── example.env           ← copiar a .env y configurar
+├── example.env               ← copiar a .env y configurar
 ├── .gitignore
-├── php/
-│   ├── api/
-│   │   ├── Dockerfile    ← PHP 8.5 + extensiones Laravel
-│   │   └── php.ini
-│   └── web/
-│       ├── Dockerfile    ← igual + Node 22 para los assets de Vite/Livewire
-│       └── php.ini
-├── nginx/                ← se monta completo como /etc/nginx/conf.d
-│   ├── 00-default.conf   ← catch-all: Host desconocido → 444
-│   ├── api.conf          ← server{} de la API
-│   └── web.conf          ← server{} de la web
-├── db_conf/
-│   └── my.cnf            ← config MariaDB 11.8
-├── logs/                 ← logs de Nginx (ignorado en git)
+├── docker-config/
+│   ├── php/
+│   │   ├── api/
+│   │   │   ├── Dockerfile    ← PHP 8.5 + extensiones Laravel
+│   │   │   └── php.ini
+│   │   └── web/
+│   │       ├── Dockerfile    ← igual + Node 22 para los assets de Vite/Livewire
+│   │       └── php.ini
+│   ├── nginx/                ← se monta completo como /etc/nginx/conf.d
+│   │   ├── 00-default.conf   ← catch-all: Host desconocido → 444
+│   │   ├── api.conf          ← server{} de la API
+│   │   └── web.conf          ← server{} de la web
+│   └── mariadb/
+│       └── my.cnf            ← config MariaDB 11.8
+├── logs/nginx/               ← logs de Nginx (ignorado en git)
 └── projects/             ← aquí se clonan los proyectos (ignorado en git)
     ├── api-pasteleria-natalia/
     └── pasteleria-natalia/
@@ -43,8 +44,8 @@ clona por separado dentro de él.
 
 | Servicio | Contenedor            | Imagen              | Expuesto en el host      |
 |----------|-----------------------|---------------------|--------------------------|
-| `api`    | `${PHP_API_CONTAINER}`| build php/api       | no                       |
-| `web`    | `${PHP_WEB_CONTAINER}`| build php/web       | no                       |
+| `api`    | `${PHP_API_CONTAINER}`| build docker-config/php/api | no                       |
+| `web`    | `${PHP_WEB_CONTAINER}`| build docker-config/php/web | no                       |
 | `nginx`  | `${NGINX_CONTAINER}`  | nginx:stable-alpine | `127.0.0.1:${NGINX_PORT}` |
 | `db`     | `${MARIADB_CONTAINER}`| mariadb:11.8        | `127.0.0.1:${MARIADB_PORT}` |
 | `redis`  | `${REDIS_CONTAINER}`  | redis:7-alpine      | no                       |
@@ -65,7 +66,7 @@ nano .env   # cambiar TODOS los passwords
 git clone <repo-api> projects/api-pasteleria-natalia
 git clone <repo-web> projects/pasteleria-natalia
 
-# 4. Poner los dominios reales en nginx/api.conf y nginx/web.conf
+# 4. Poner los dominios reales en docker-config/nginx/api.conf y docker-config/nginx/web.conf
 
 # 5. Levantar
 docker compose up -d --build
@@ -180,7 +181,7 @@ Cópialo a `/etc/nginx/conf.d/` del servidor **solo cuando ya tengas el dominio
 y su Origin Certificate** — si lo copias antes, `nginx -t` falla porque el
 certificado no existe.
 
-Los `server_name` de ese archivo y los de `nginx/web.conf` y `nginx/api.conf`
+Los `server_name` de ese archivo y los de `docker-config/nginx/web.conf` y `docker-config/nginx/api.conf`
 de este repo deben coincidir exactamente.
 
 ## Colas y tareas programadas
@@ -191,9 +192,7 @@ comando:
 
 ```yaml
   web-queue:
-    build:
-      context: .
-      dockerfile: php/web/Dockerfile
+    build: ./docker-config/php/web
     container_name: ${PHP_WEB_CONTAINER}_queue
     restart: unless-stopped
     environment:
