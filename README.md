@@ -264,6 +264,7 @@ gunzip -c backups/ARCHIVO.sql.gz | docker compose exec -T db sh -c 'mariadb -uro
 ```bash
 sudo tee /etc/logrotate.d/fds-natalia > /dev/null <<EOF
 $(pwd)/logs/nginx/*.log {
+    su root root
     daily
     rotate 14
     compress
@@ -277,6 +278,14 @@ EOF
 
 `copytruncate` porque nginx corre dentro del contenedor y no se le puede mandar
 la señal para reabrir el archivo.
+`su root root` porque `logs/nginx` es de tu usuario, no de root: sin esa línea
+logrotate se niega a rotar por "insecure permissions".
+
+Para comprobarlo (solo simula, no rota nada):
+
+```bash
+sudo logrotate -d /etc/logrotate.d/fds-natalia
+```
 
 ## Notas de seguridad
 
